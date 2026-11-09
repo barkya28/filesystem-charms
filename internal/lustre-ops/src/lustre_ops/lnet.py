@@ -114,9 +114,6 @@ def parse_network_config(spec: str) -> dict[str, list[str]]:
         tcp(eth0),tcp1(eth1)
         o2ib1(ib2)
 
-    The legacy semicolon-separated ``<name>=<iface>[,<iface>...]`` syntax is
-    also accepted. The two formats cannot be mixed in a single specification.
-
     Args:
         spec: The specification string.
 
@@ -131,18 +128,18 @@ def parse_network_config(spec: str) -> dict[str, list[str]]:
     if not spec:
         return {}
 
-    networks: dict[str, list[str]] = {}
-    for token in _network_config_tokens(spec):
-        token = token.strip()
-        if not token:
-            continue
-        if "=" not in token:
-            raise LNetParseError(f"Invalid LNet network specification `{token}`")
+    entry = r"([^\s,;()=]+)\s*\(([^()]*)\)"
+    if not re.fullmatch(rf"{entry}(?:\s*,\s*{entry})*", spec):
+        raise LNetParseError(f"Invalid LNet network specification `{spec}`")
 
-        name, interfaces_str = token.split("=", 1)
-        name = name.strip()
-        if not name:
-            raise LNetParseError(f"Empty network name in `{token}`")
+    networks: dict[str, list[str]] = {}
+    for match in re.finditer(entry, spec):
+        name, interfaces_str = match.groups()
+        interfaces_str = interfaces_str.strip()
+        if not interfaces_str:
+            raise LNetParseError(f"No interfaces specified for network `{name}`")
+        if not re.fullmatch(r"[^\s,;()=]+(?:\s*,\s*[^\s,;()=]+)*", interfaces_str):
+            raise LNetParseError(f"Invalid LNet network specification `{match.group()}`")
 
         # Special case of index 0 network must be handled.
         # LNet indexes from 0 but does not require the trailing 0 for the first net.
@@ -152,44 +149,17 @@ def parse_network_config(spec: str) -> dict[str, list[str]]:
         #   `lnetctl net add --net tcp0 --if eth0`
         # are equivalent, and `lnetctl net show` always renders the NIDs as `@tcp` (no trailing 0).
         #
-        # Check for a trailing 0 here and remove it to ensure configurations like `tcp=eth0` and
-        # `tcp0=eth0` are treated equivalently. Second-to-last character is also checked to avoid
+        # Check for a trailing 0 here and remove it to ensure configurations like `tcp(eth0)` and
+        # `tcp0(eth0)` are treated equivalently. Second-to-last character is also checked to avoid
         # removing a trailing 0 from a network name such as `o2ib10`.
         if len(name) > 1 and name[-1] == "0" and not name[-2].isdigit():
             name = name[:-1]
 
-        interfaces = [s.strip() for s in interfaces_str.split(",") if s.strip()]
-        if not interfaces:
-            raise LNetParseError(f"No interfaces specified for network `{token}`")
-
         if name in networks:
             raise LNetParseError(f"Duplicate LNet network `{name}`")
-        networks[name] = interfaces
+        networks[name] = [interface.strip() for interface in interfaces_str.split(",")]
 
     return networks
-
-
-def _network_config_tokens(spec: str) -> list[str]:
-    """Convert kernel-style entries to the legacy tokens used for validation.
-
-    Validate the whole string before extracting entries so that unmatched text,
-    mixed formats, and stray delimiters cannot be silently discarded.
-    """
-    if "(" not in spec and ")" not in spec:
-        return spec.split(";")
-
-    entry = r"([^\s,;()=]+)\s*\(([^()]*)\)"
-    if not re.fullmatch(rf"{entry}(?:\s*,\s*{entry})*", spec):
-        raise LNetParseError(f"Invalid LNet network specification `{spec}`")
-
-    tokens = []
-    for match in re.finditer(entry, spec):
-        name, interfaces = match.groups()
-        interfaces = interfaces.strip()
-        if interfaces and not re.fullmatch(r"[^\s,;()=]+(?:\s*,\s*[^\s,;()=]+)*", interfaces):
-            raise LNetParseError(f"Invalid LNet network specification `{match.group()}`")
-        tokens.append(f"{name}={interfaces}")
-    return tokens
 
 
 def _add_interfaces(net: str, interfaces: set[str]) -> None:

@@ -139,9 +139,8 @@ parentheses separate networks; commas inside parentheses specify multiple interf
 for one network (multi-rail). Network names with index zero, such as `tcp0`, are
 equivalent to their bare names, such as `tcp`.
 
-The legacy form `tcp=eth0; o2ib0=ib0,ib1` remains supported for compatibility.
-Use one format per configuration value. Empty values retain automatic detection;
-malformed input and duplicate network names are rejected. Set this configuration
+Empty values retain automatic detection.
+Malformed input and duplicate network names are rejected. Set this configuration
 before the charm's initial setup; it is not a live network reconfiguration mechanism.
 
 ## 🤔 What's next?
